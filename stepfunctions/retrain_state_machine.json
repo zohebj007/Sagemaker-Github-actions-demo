@@ -1,0 +1,66 @@
+{
+  "Comment": "Start SageMaker Pipeline and wait for result",
+  "StartAt": "StartPipeline",
+  "TimeoutSeconds": 86400,
+  "States": {
+    "StartPipeline": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:sagemaker:startPipelineExecution",
+      "Parameters": {
+        "PipelineName": "mlops-github-action-demo",
+        "PipelineExecutionDisplayName.$": "States.Format('exec-from-{}', $.dataset_s3_path)",
+        "PipelineParameters": [
+          {
+            "Name": "InputDataS3Uri",
+            "Value.$": "$.dataset_s3_path"
+          }
+        ]
+      },
+      "ResultPath": "$.start_result",
+      "Next": "WaitBeforeCheck"
+    },
+    "WaitBeforeCheck": {
+      "Type": "Wait",
+      "Seconds": 60,
+      "Next": "DescribeExecution"
+    },
+    "DescribeExecution": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:sagemaker:describePipelineExecution",
+      "Parameters": {
+        "PipelineExecutionArn.$": "$.start_result.PipelineExecutionArn"
+      },
+      "ResultPath": "$.describe_result",
+      "Next": "CheckStatus"
+    },
+    "CheckStatus": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.describe_result.PipelineExecutionStatus",
+          "StringEquals": "Succeeded",
+          "Next": "SuccessState"
+        },
+        {
+          "Variable": "$.describe_result.PipelineExecutionStatus",
+          "StringEquals": "Failed",
+          "Next": "FailedState"
+        },
+        {
+          "Variable": "$.describe_result.PipelineExecutionStatus",
+          "StringEquals": "Stopped",
+          "Next": "FailedState"
+        }
+      ],
+      "Default": "WaitBeforeCheck"
+    },
+    "SuccessState": {
+      "Type": "Succeed"
+    },
+    "FailedState": {
+      "Type": "Fail",
+      "Error": "PipelineFailed",
+      "Cause.$": "$.describe_result"
+    }
+  }
+}
